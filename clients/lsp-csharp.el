@@ -53,6 +53,19 @@ Set this if you have the binary installed or have it built yourself."
   :group 'lsp-csharp
   :type 'string)
 
+(defcustom lsp-csharp-enable-decompilation-support
+  nil
+  "Decompile bytecode when browsing method metadata for types in assemblies.
+Otherwise only declarations for the methods are visible (the default)."
+  :group 'lsp-csharp
+  :type 'boolean
+
+(defun lsp-csharp--environment-fn ()
+  "Build environment structure for current values of lsp-csharp customizables.
+
+See https://github.com/OmniSharp/omnisharp-roslyn/wiki/Configuration-Options"
+  `(("OMNISHARP_RoslynExtensionsOptions:enableDecompilationSupport" . ,(if lsp-csharp-enable-decompilation-support "true" "false"))))
+
 (defun lsp-csharp--version-list-latest (lst)
   (->> lst
        (-sort (lambda (a b) (not (version<= (substring a 1)
@@ -404,6 +417,7 @@ stores this metadata and filename is returned so lsp-mode can display this file.
 
                   :major-modes '(csharp-mode csharp-tree-sitter-mode)
                   :server-id 'csharp
+                  :environment-fn #'lsp-csharp--environment-fn
                   :action-handlers (ht ("omnisharp/client/findReferences" 'lsp-csharp--action-client-find-references))
                   :notification-handlers (ht ("o#/projectadded" 'ignore)
                                              ("o#/projectchanged" 'ignore)
