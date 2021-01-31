@@ -47,6 +47,12 @@ Set this if you have the binary installed or have it built yourself."
   :group 'lsp-csharp
   :type '(string :tag "Single string value or nil"))
 
+(defcustom lsp-csharp-test-run-buffer-name
+  "*lsp-csharp test run*"
+  "The name of buffer used for outputing lsp-csharp test run results."
+  :group 'lsp-csharp
+  :type 'string)
+
 (defun lsp-csharp--version-list-latest (lst)
   (->> lst
        (-sort (lambda (a b) (not (version<= (substring a 1)
@@ -244,6 +250,99 @@ tarball or a zip file (based on a current platform) to TARGET-DIR."
           ((&omnisharp:MsBuildProject :path) ms-build-project))
     (find-file path)))
 
+(defun lsp-csharp--reset-test-buffer (present-buffer)
+  "Create new or reuse an existing test result output buffer.
+
+PRESENT-BUFFER will make the buffer be presented to the user."
+  (let ((existing-buffer (get-buffer lsp-csharp-test-run-buffer-name))
+        (project-root-dir (lsp--suggest-project-root)))
+    (if existing-buffer
+        (progn
+          (with-current-buffer existing-buffer
+            (setq buffer-read-only nil)
+            (erase-buffer)
+            (setq buffer-read-only t)
+            (setq default-directory project-root-dir))
+          existing-buffer)
+      (let ((buffer (get-buffer-create lsp-csharp-test-run-buffer-name)))
+        (with-current-buffer buffer
+          (setq default-directory project-root-dir)
+          (compilation-mode)
+          buffer))))
+
+  (if present-buffer
+      (display-buffer lsp-csharp-test-run-buffer-name)))
+
+(defun lsp-csharp--test-message (message)
+  "Emit a MESSAGE to lsp-csharp test run buffer."
+  (let ((existing-buffer (get-buffer lsp-csharp-test-run-buffer-name)))
+    (if existing-buffer
+        (with-current-buffer existing-buffer
+          (setq buffer-read-only nil)
+          (goto-char (point-max))
+          (insert message)
+          (insert "\n")
+          (setq buffer-read-only t))))))
+
+(defun lsp-csharp-run-test-at-point ()
+  "Start test run at current point (if any)."
+  (interactive)
+  (lsp-csharp--reset-test-buffer t)
+  (lsp-send-execute-command "omnisharp/runTestMethod"
+                            (vector (ht ("textDocumentUri" (lsp--buffer-uri))
+                                        ("position" (lsp--cur-position))))))
+
+(defun lsp-csharp-run-all-tests-in-buffer ()
+"Start test run for all test methods in current buffer."
+  (interactive)
+  (lsp-csharp--reset-test-buffer t)
+  (lsp-send-execute-command "omnisharp/runTestMethod"
+                            (vector (ht ("textDocumentUri" (lsp--buffer-uri))))))
+
+(lsp-defun lsp-csharp--handle-os-error (_workspace (&omnisharp:ErrorMessage :file-name :text))
+  "Handle the 'o#/error' (interop) notification by displaying a message with lsp-warn."
+  (lsp-warn "%s: %s" file-name text))
+
+(lsp-defun lsp-csharp--handle-os-testmessage (_workspace (&omnisharp:TestMessageEvent :message-level :message))
+  "Handle the 'o#/testmessage and display test message on lsp-csharp
+test output buffer."
+  (lsp-csharp--test-message message))
+
+(lsp-defun lsp-csharp--handle-os-testcompleted (_workspace (&omnisharp:DotNetTestResult
+                                                            :method-name
+                                                            :outcome
+                                                            :error-message
+                                                            :error-stack-trace
+                                                            :standard-output
+                                                            :standard-error))
+  "Handle the 'o#/testcompleted' message and display the results on the
+lsp-csharp test output buffer."
+  (let ((passed (string-equal "passed" outcome)))
+    (lsp-csharp--test-message
+     (format "[%s] %s "
+             (propertize
+              (upcase outcome)
+              'font-lock-face (if passed
+                                  '(:foreground "green" :weight bold)
+                                '(:foreground "red" :weight bold)))
+             method-name))
+
+    (unless passed
+      (lsp-csharp--test-message error-message)
+
+      (if error-stack-trace
+          (lsp-csharp--test-message error-stack-trace))
+
+      (unless (= (seq-length standard-output) 0)
+        (lsp-csharp--test-message "STANDARD OUTPUT:")
+        (seq-doseq (stdout-line standard-output)
+          (lsp-csharp--test-message stdout-line)))
+
+      (unless (= (seq-length standard-error) 0)
+        (lsp-csharp--test-message "STANDARD ERROR:")
+        (seq-doseq (stderr-line standard-error)
+          (lsp-csharp--test-message stderr-line))))))
+
 (lsp-defun lsp-csharp--action-client-find-references ((&Command :arguments?))
   "Read first argument from ACTION as Location and display xrefs for that location
 using the `textDocument/references' request."
@@ -314,6 +413,8 @@ stores this metadata and filename is returned so lsp-mode can display this file.
                                              ("o#/packagerestorefinished" 'ignore)
                                              ("o#/unresolveddependencies" 'ignore)
                                              ("o#/error" 'lsp-csharp--handle-os-error)
+                                             ("o#/testmessage" 'lsp-csharp--handle-os-testmessage)
+                                             ("o#/testcompleted" 'lsp-csharp--handle-os-testcompleted)
                                              ("o#/projectconfiguration" 'ignore)
                                              ("o#/projectdiagnosticstatus" 'ignore))
                   :uri-handlers (lsp-ht ("osmd" #'lsp-csharp--osmd-uri-handler))

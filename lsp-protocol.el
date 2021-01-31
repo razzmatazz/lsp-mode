@@ -369,7 +369,9 @@ See `-let' for a description of the destructuring mechanism."
                (omnisharp:MsBuildProject (:IsUnitProject :IsExe :Platform :Configuration :IntermediateOutputPath :OutputPath :TargetFrameworks :SourceFiles :TargetFramework :TargetPath :AssemblyName :Path :ProjectGuid))
                (omnisharp:ProjectInformation (:ScriptProject :MsBuildProject))
                (omnisharp:MetadataRequest (:AssemblyName :TypeName :ProjectName :VersionNumber :Language))
-               (omnisharp:MetadataResponse (:SourceName :Source)))
+               (omnisharp:MetadataResponse (:SourceName :Source))
+               (omnisharp:TestMessageEvent (:MessageLevel :Message))
+               (omnisharp:DotNetTestResult (:MethodName :Outcome :ErrorMessage :ErrorStackTrace :StandardOutput :StandardError)))
 
 (lsp-interface (rls:Cmd (:args :binary :env :cwd) nil))
 
