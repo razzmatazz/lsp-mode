@@ -367,7 +367,9 @@ See `-let' for a description of the destructuring mechanism."
 (lsp-interface (omnisharp:ErrorMessage (:Text :FileName :Line :Column))
                (omnisharp:ProjectInformationRequest (:FileName))
                (omnisharp:MsBuildProject (:IsUnitProject :IsExe :Platform :Configuration :IntermediateOutputPath :OutputPath :TargetFrameworks :SourceFiles :TargetFramework :TargetPath :AssemblyName :Path :ProjectGuid))
-               (omnisharp:ProjectInformation (:ScriptProject :MsBuildProject)))
+               (omnisharp:ProjectInformation (:ScriptProject :MsBuildProject))
+               (omnisharp:MetadataRequest (:AssemblyName :TypeName :ProjectName :VersionNumber :Language))
+               (omnisharp:MetadataResponse (:SourceName :Source)))
 
 (lsp-interface (rls:Cmd (:args :binary :env :cwd) nil))
 
