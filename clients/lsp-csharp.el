@@ -333,11 +333,10 @@ a list of elements that match the predicate given."
                               :file-name (buffer-file-name)
                               :test-frameworkname test-method-framework
                               :method-names test-method-names)))
-        (message (json-encode request-message))
         (lsp-csharp--reset-test-buffer t)
         (lsp-request-async "o#/v2/runtestsinclass"
                            (json-parse-string (json-encode request-message))
-                           (lambda ()
+                           (lambda (_)
                              (message "lsp-csharp: Test run has started"))))
     (message "lsp-csharp: No Test Methods to run")))
 
