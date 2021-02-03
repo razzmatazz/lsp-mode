@@ -58,7 +58,7 @@ Set this if you have the binary installed or have it built yourself."
   "Decompile bytecode when browsing method metadata for types in assemblies.
 Otherwise only declarations for the methods are visible (the default)."
   :group 'lsp-csharp
-  :type 'boolean
+  :type 'boolean)
 
 (defun lsp-csharp--environment-fn ()
   "Build environment structure for current values of lsp-csharp customizables.
@@ -295,7 +295,7 @@ PRESENT-BUFFER will make the buffer be presented to the user."
           (goto-char (point-max))
           (insert message)
           (insert "\n")
-          (setq buffer-read-only t))))))
+          (setq buffer-read-only t)))))
 
 (defun lsp-csharp-run-test-at-point ()
   "Start test run at current point (if any)."
