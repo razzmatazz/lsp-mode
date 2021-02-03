@@ -365,11 +365,17 @@ See `-let' for a description of the destructuring mechanism."
 (lsp-interface (pwsh:ScriptRegion (:StartLineNumber :EndLineNumber :StartColumnNumber :EndColumnNumber :Text) nil))
 
 (lsp-interface (omnisharp:ErrorMessage (:Text :FileName :Line :Column))
+               (omnisharp:CodeStructureRequest (:FileName))
+               (omnisharp:CodeStructureResponse (:Elements))
+               (omnisharp:CodeElement (:Kind :Name :DisplayName :Children :Ranges :Properties))
+               (omnisharp:Range (:Start :End))
+               (omnisharp:Point (:Line :Column))
                (omnisharp:ProjectInformationRequest (:FileName))
                (omnisharp:MsBuildProject (:IsUnitProject :IsExe :Platform :Configuration :IntermediateOutputPath :OutputPath :TargetFrameworks :SourceFiles :TargetFramework :TargetPath :AssemblyName :Path :ProjectGuid))
                (omnisharp:ProjectInformation (:ScriptProject :MsBuildProject))
                (omnisharp:MetadataRequest (:AssemblyName :TypeName :ProjectName :VersionNumber :Language))
                (omnisharp:MetadataResponse (:SourceName :Source))
+               (omnisharp:RunTestsInClassRequest (:MethodNames :RunSettings :TestFrameworkname :TargetFrameworkVersion :NoBuild :Line :Column :Buffer :FileName))
                (omnisharp:TestMessageEvent (:MessageLevel :Message))
                (omnisharp:DotNetTestResult (:MethodName :Outcome :ErrorMessage :ErrorStackTrace :StandardOutput :StandardError)))
 

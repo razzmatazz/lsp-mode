@@ -263,6 +263,84 @@ tarball or a zip file (based on a current platform) to TARGET-DIR."
           ((&omnisharp:MsBuildProject :path) ms-build-project))
     (find-file path)))
 
+(defun lsp-csharp--get-buffer-code-structure ()
+  "Retrieve code structure by calling into the /v2/codestructure endpoint.
+Returns :elements from omnisharp:CodeStructureResponse."
+  (-let* ((code-structure (lsp-request "o#/v2/codestructure"
+                                       (lsp-make-omnisharp-code-structure-request :file-name (buffer-file-name))))
+          ((&omnisharp:CodeStructureResponse :elements) code-structure))
+    elements))
+
+(defun lsp-csharp--cs-inspect-elements-recursively (fn elements)
+  "Invokes FN on each of elements on the ELEMENTS tree
+in a depth-first fashion."
+  (seq-each
+   (lambda (el)
+     (funcall fn el)
+     (-let* (((&alist 'Children children) el))
+       (lsp-csharp--cs-inspect-elements-recursively fn children)))
+   elements))
+
+(defun lsp-csharp--cs-filter-resursively (predicate elements)
+  "Filters out code elements in the sequence given and returns
+a list of elements that match the predicate given."
+
+  (let ((results nil))
+    (lsp-csharp--cs-inspect-elements-recursively
+     (lambda (el)
+       (if (funcall predicate el)
+           (setq results (cons el results))))
+     elements)
+    results))
+
+(defun lsp-csharp--cs-l-c-within-range (l c range)
+  "Returns 't when L (line) and C (column) are within the RANGE."
+  (-let* (((&omnisharp:Range :start :end) range)
+          ((&omnisharp:Point :line start-l :column start-c) start)
+          ((&omnisharp:Point :line end-l :column end-c) end))
+    (or (and (= l start-l) (>= c start-c) (or (> end-l start-l) (<= c end-c)))
+        (and (> l start-l) (< l end-l))
+        (and (= l end-l) (<= c end-c)))))
+
+(defun lsp-csharp--cs-element-stack-on-l-c (l c elements)
+  (let ((matching-element (seq-find (lambda (el)
+                                      (-let* (((&omnisharp:CodeElement :ranges) el)
+                                              ((&hash "full" full-range) ranges))
+                                        (lsp-csharp--cs-l-c-within-range l c full-range)))
+                                    elements)))
+    (if matching-element
+        (-let (((&omnisharp:CodeElement :children) matching-element))
+          (cons matching-element (lsp-csharp--cs-element-stack-on-l-c l c children))))))
+
+(defun lsp-csharp--cs-element-stack-at-point ()
+  (let ((pos-line (line-number-at-pos))
+        (pos-col (current-column)))
+    (lsp-csharp--cs-element-stack-on-l-c pos-line
+                                         pos-col
+                                         (lsp-csharp--get-buffer-code-structure))))
+
+
+(defun lsp-csharp--cs-unit-test-method-p (el)
+  (-let* (((&omnisharp:CodeElement :kind :properties) el)
+          ((&hash "testMethodName" test-method-name
+                  "testFramework" test-framework) properties))
+    (if (and test-method-name test-framework)
+        (list test-method-name test-framework))))
+
+(defun lsp-csharp--unit-test-start (test-method-framework test-method-names)
+  (if (and test-method-framework test-method-names)
+      (let ((request-message (lsp-make-omnisharp-run-tests-in-class-request
+                              :file-name (buffer-file-name)
+                              :test-frameworkname test-method-framework
+                              :method-names test-method-names)))
+        (message (json-encode request-message))
+        (lsp-csharp--reset-test-buffer t)
+        (lsp-request-async "o#/v2/runtestsinclass"
+                           (json-parse-string (json-encode request-message))
+                           (lambda ()
+                             (message "lsp-csharp: Test run has started"))))
+    (message "lsp-csharp: No Test Methods to run")))
+
 (defun lsp-csharp--reset-test-buffer (present-buffer)
   "Create new or reuse an existing test result output buffer.
 
@@ -300,10 +378,12 @@ PRESENT-BUFFER will make the buffer be presented to the user."
 (defun lsp-csharp-run-test-at-point ()
   "Start test run at current point (if any)."
   (interactive)
-  (lsp-csharp--reset-test-buffer t)
-  (lsp-send-execute-command "omnisharp/runTestMethod"
-                            (vector (ht ("textDocumentUri" (lsp--buffer-uri))
-                                        ("position" (lsp--cur-position))))))
+  (let* ((stack (lsp-csharp--cs-element-stack-at-point))
+         (element-on-point (car (last stack)))
+         (test-method (lsp-csharp--cs-unit-test-method-p element-on-point))
+         (test-method-name (car test-method))
+         (test-method-framework (car (cdr test-method))))
+    (lsp-csharp--unit-test-start test-method-framework (list test-method-name))))
 
 (defun lsp-csharp-run-all-tests-in-buffer ()
 "Start test run for all test methods in current buffer."
