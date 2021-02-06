@@ -263,7 +263,7 @@ tarball or a zip file (based on a current platform) to TARGET-DIR."
           ((&omnisharp:MsBuildProject :path) ms-build-project))
     (find-file path)))
 
-(defun lsp-csharp--get-buffer-code-structure ()
+(defun lsp-csharp--get-buffer-cs-elements ()
   "Retrieve code structure by calling into the /v2/codestructure endpoint.
 Returns :elements from omnisharp:CodeStructureResponse."
   (-let* ((code-structure (lsp-request "o#/v2/codestructure"
@@ -272,29 +272,23 @@ Returns :elements from omnisharp:CodeStructureResponse."
     elements))
 
 (defun lsp-csharp--cs-inspect-elements-recursively (fn elements)
-  "Invokes FN on each of elements on the ELEMENTS tree
-in a depth-first fashion."
   (seq-each
    (lambda (el)
      (funcall fn el)
-     (-let* (((&alist 'Children children) el))
+     (-let (((&omnisharp:CodeElement :children) el))
        (lsp-csharp--cs-inspect-elements-recursively fn children)))
    elements))
 
-(defun lsp-csharp--cs-filter-resursively (predicate elements)
-  "Filters out code elements in the sequence given and returns
-a list of elements that match the predicate given."
-
+(defun lsp-csharp--cs-collect-recursively (predicate elements)
   (let ((results nil))
-    (lsp-csharp--cs-inspect-elements-recursively
-     (lambda (el)
-       (if (funcall predicate el)
-           (setq results (cons el results))))
-     elements)
+    (lsp-csharp--cs-inspect-elements-recursively (lambda (el)
+                                                   (if (funcall predicate el)
+                                                       (setq results (cons el results))))
+                                                 elements)
     results))
 
 (defun lsp-csharp--cs-l-c-within-range (l c range)
-  "Returns 't when L (line) and C (column) are within the RANGE."
+  "Return 't when L (line) and C (column) are within the RANGE."
   (-let* (((&omnisharp:Range :start :end) range)
           ((&omnisharp:Point :line start-l :column start-c) start)
           ((&omnisharp:Point :line end-l :column end-c) end))
@@ -313,19 +307,17 @@ a list of elements that match the predicate given."
           (cons matching-element (lsp-csharp--cs-element-stack-on-l-c l c children))))))
 
 (defun lsp-csharp--cs-element-stack-at-point ()
-  (let ((pos-line (line-number-at-pos))
+  (let ((pos-line (- (line-number-at-pos) 1))
         (pos-col (current-column)))
     (lsp-csharp--cs-element-stack-on-l-c pos-line
                                          pos-col
-                                         (lsp-csharp--get-buffer-code-structure))))
-
+                                         (lsp-csharp--get-buffer-cs-elements))))
 
 (defun lsp-csharp--cs-unit-test-method-p (el)
-  (-let* (((&omnisharp:CodeElement :kind :properties) el)
-          ((&hash "testMethodName" test-method-name
-                  "testFramework" test-framework) properties))
-    (if (and test-method-name test-framework)
-        (list test-method-name test-framework))))
+  (-when-let* (((&omnisharp:CodeElement :kind :properties) el)
+               ((&hash "testMethodName" test-method-name
+                       "testFramework" test-framework) properties))
+    (list test-method-name test-framework)))
 
 (defun lsp-csharp--unit-test-start (test-method-framework test-method-names)
   (if (and test-method-framework test-method-names)
@@ -334,11 +326,13 @@ a list of elements that match the predicate given."
                               :test-frameworkname test-method-framework
                               :method-names test-method-names)))
         (lsp-csharp--reset-test-buffer t)
+        (lsp-session-set-metadata "last-test-method-framework" test-method-framework)
+        (lsp-session-set-metadata "last-test-method-names" test-method-names)
         (lsp-request-async "o#/v2/runtestsinclass"
                            (json-parse-string (json-encode request-message))
                            (lambda (_)
                              (message "lsp-csharp: Test run has started"))))
-    (message "lsp-csharp: No Test Methods to run")))
+    (message "lsp-csharp: No test methods to run")))
 
 (defun lsp-csharp--reset-test-buffer (present-buffer)
   "Create new or reuse an existing test result output buffer.
@@ -385,11 +379,36 @@ PRESENT-BUFFER will make the buffer be presented to the user."
     (lsp-csharp--unit-test-start test-method-framework (list test-method-name))))
 
 (defun lsp-csharp-run-all-tests-in-buffer ()
-"Start test run for all test methods in current buffer."
+  "Start test run for all test methods in current buffer."
   (interactive)
-  (lsp-csharp--reset-test-buffer t)
-  (lsp-send-execute-command "omnisharp/runTestMethod"
-                            (vector (ht ("textDocumentUri" (lsp--buffer-uri))))))
+  (let* ((elements (lsp-csharp--get-buffer-cs-elements))
+         (test-methods (lsp-csharp--cs-collect-recursively 'lsp-csharp--cs-unit-test-method-p elements))
+         (test-method-framework (car (cdr (lsp-csharp--cs-unit-test-method-p (car test-methods)))))
+         (test-method-names (mapcar (lambda (method)
+                                      (car (lsp-csharp--cs-unit-test-method-p method)))
+                                    test-methods)))
+    (lsp-csharp--unit-test-start test-method-framework test-method-names)))
+
+
+(defun lsp-csharp-run-test-in-buffer ()
+  "Start test run for selected method in current buffer."
+  (interactive)
+  (when-let* ((elements (lsp-csharp--get-buffer-cs-elements))
+              (test-methods (lsp-csharp--cs-collect-recursively 'lsp-csharp--cs-unit-test-method-p elements))
+              (test-method-framework (car (cdr (lsp-csharp--cs-unit-test-method-p (car test-methods)))))
+              (test-method-names (mapcar (lambda (method)
+                                           (car (lsp-csharp--cs-unit-test-method-p method)))
+                                         test-methods))
+              (selected-test-method-name (lsp--completing-read "Select test:" test-method-names 'identity)))
+    (lsp-csharp--unit-test-start test-method-framework (list selected-test-method-name))))
+
+(defun lsp-csharp-run-last-tests ()
+  "Start tests that we ran last time on this workspace."
+  (interactive)
+  (if-let ((last-test-method-framework (lsp-session-get-metadata "last-test-method-framework"))
+           (last-test-method-names (lsp-session-get-metadata "last-test-method-names")))
+      (lsp-csharp--unit-test-start last-test-method-framework last-test-method-names)
+    (message "lsp-csharp: No test method(s) found to be ran previously on this workspace")))
 
 (lsp-defun lsp-csharp--handle-os-error (_workspace (&omnisharp:ErrorMessage :file-name :text))
   "Handle the 'o#/error' (interop) notification by displaying a message with lsp-warn."
