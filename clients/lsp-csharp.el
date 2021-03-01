@@ -469,16 +469,16 @@ using the `textDocument/references' request."
   "Handle the 'o#/error' (interop) notification by displaying a message with lsp-warn."
   (lsp-warn "%s: %s" file-name text))
 
-(lsp-defun lsp-csharp--osmd-uri-handler (uri)
-  "Handles osmd:// uri from omnisharp-roslyn server.
+(lsp-defun lsp-csharp--omnisharp-metadata-uri-handler (uri)
+  "Handles omnisharp:/(metadata) uri from omnisharp-roslyn server.
 
 The uri is parsed and then 'o#/metadata' request is issued to retrieve
-metadata from the server. A cache file is create in project root dir that
+metadata from the server. A cache file is created on project root dir that
 stores this metadata and filename is returned so lsp-mode can display this file."
-  (string-match "^osmd:/Project/\\(.+\\)/Assembly/\\(.+\\)/Symbol/\\(.+\\)\.cs$" uri)
-  (-when-let* ((project-name (match-string 1 uri))
-               (assembly-name (match-string 2 uri))
-               (type-name (match-string 3 uri))
+  (string-match "^omnisharp:/metadata/Project/\\(.+\\)/Assembly/\\(.+\\)/Symbol/\\(.+\\)\.cs$" uri)
+  (-when-let* ((project-name (url-unhex-string (match-string 1 uri)))
+               (assembly-name (url-unhex-string (match-string 2 uri)))
+               (type-name (url-unhex-string (match-string 3 uri)))
                (metadata-req (lsp-make-omnisharp-metadata-request :project-name project-name
                                                                   :assembly-name assembly-name
                                                                   :type-name type-name))
@@ -529,7 +529,7 @@ stores this metadata and filename is returned so lsp-mode can display this file.
                                              ("o#/testcompleted" 'lsp-csharp--handle-os-testcompleted)
                                              ("o#/projectconfiguration" 'ignore)
                                              ("o#/projectdiagnosticstatus" 'ignore))
-                  :uri-handlers (lsp-ht ("osmd" #'lsp-csharp--osmd-uri-handler))
+                  :uri-handlers (lsp-ht ("omnisharp" #'lsp-csharp--omnisharp-metadata-uri-handler))
                   :before-file-open-fn (lambda (_workspace)
                                          (let ((metadata-file-name (concat buffer-file-name ".metadata-uri")))
                                            (setq-local lsp-buffer-uri
