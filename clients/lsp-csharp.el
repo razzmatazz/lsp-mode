@@ -66,6 +66,13 @@ Otherwise only declarations for the methods are visible (the default)."
 See https://github.com/OmniSharp/omnisharp-roslyn/wiki/Configuration-Options"
   `(("OMNISHARP_RoslynExtensionsOptions:enableDecompilationSupport" . ,(if lsp-csharp-enable-decompilation-support "true" "false"))))
 
+(defcustom lsp-csharp-solution-file
+  nil
+  "Solution to load when starting the server.
+Usually this is to be set in your .dir-locals.el on the project root directory."
+  :group 'lsp-csharp
+  :type 'string)
+
 (defun lsp-csharp--version-list-latest (lst)
   (->> lst
        (-sort (lambda (a b) (not (version<= (substring a 1)
@@ -252,7 +259,9 @@ tarball or a zip file (based on a current platform) to TARGET-DIR."
 
 (defun lsp-csharp--language-server-command ()
   "Resolves path and arguments to use to start the server."
-  (list (lsp-csharp--language-server-path) "-lsp"))
+  (append
+   (list (lsp-csharp--language-server-path) "-lsp")
+   (when lsp-csharp-solution-file (list "-s" (expand-file-name lsp-csharp-solution-file)))))
 
 (lsp-defun lsp-csharp-open-project-file ()
   "Open corresponding project file  (.csproj) for the current file."
